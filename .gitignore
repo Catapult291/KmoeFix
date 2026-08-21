@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+.env
+
+# 本工具运行时产生
+kmoe_fix_config.json
+*_修正版.epub
+*_修正版.zip
+*_修正版.cbz
+*.tmp
+
+# 调试/备份（不进仓库）
+*.bak*
+* bak_*
+测试_*.py
+启动_*.bat
+
+# 系统
+.DS_Store
+Thumbs.db
+Desktop.ini
