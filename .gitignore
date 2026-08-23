@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+*.spec
+!KmoeFix.spec
+
+# Project specific
+*_修正版.epub
+*_修正版.cbz
+*_修正版.zip
+*.tmp
+kmoe_fix_config.json
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
