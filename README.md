@@ -1,134 +1,106 @@
-# kmoe-epub-order-fixer
+# kmoefix — 漫画 EPUB 文件名/页序修复工具（Rust）
 
-> Kmoe 漫画包顺序修正工具 — 按真实页码重命名，重建 EPUB，使按文件名排序的看图场景也不再乱序。
+把 Kmoe 这类站点下载的漫画 EPUB 按**真实页码**重命名，输出符合 EPUB 规范的 `*_修正版.epub`，让按文件名排序的看图场景（NeeView、解压看图）不再乱序。
 
-![Python](https://img.shields.io/badge/Python-3.8%2B-3776AB)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
-![License](https://img.shields.io/badge/License-MIT-green)
-![No Dependencies](https://img.shields.io/badge/Dependencies-零依赖-brightgreen)
 
-正规 EPUB 阅读器按 `spine` 阅读不会乱；但解压后直接看图、或用 NeeView 等**按文件名排序**的看图器，就会乱序。本工具读取 `vol.opf` 的 `spine` 顺序与每页 `<title>第 N 頁</title>` 的真实页码，把 `html/` 与 `image/` 重命名为有序文件名，并同步改写 `vol.opf` / `xml/vol.nav`，输出 `*_修正版.epub`，默认不依赖 NeeView。
+## 解决什么问题
 
-## 痛点
+### 初衷：文件名乱序
 
-Kmoe 下载的漫画包（EPUB 实为 ZIP）为防扒图，将所有页面与图片重命名为随机文件名：
+Kmoe 下载的漫画 EPUB（实为 ZIP）为防扒图，把所有页面与图片重命名为随机文件名（`html/page-XXXXXX.html`、`image/moe-XXXXX.jpg`）。真实页码藏在每页 `<title>第N话</title>` 里，正确阅读顺序在 `vol.opf` 的 `<spine>` 里。
 
-- `html/page-XXXXXX.html`
-- `image/moe-XXXXX.jpg`
+正规 EPUB 阅读器按 spine 读不会乱；但 **NeeView 这类看图器按文件名排序**，读出来就是乱的。本工具按 spine 顺序读每页标题的真实话数，把 `html/`、`image/` 重命名为有序文件名（`page-001.html` / `001.jpg`），并同步改写 `vol.opf` / `xml/vol.nav` —— 修复后文件名排序 = 话数顺序。
 
-真实页码藏在每页的 `<title>第 N 頁</title>` 与 `<img alt="第 N 頁">` 中，正确阅读顺序在 `vol.opf` 的 `<spine>` 里。按文件名排序即乱序。
+### 能力扩展：spine 也乱序的输入
 
-## 原理
+开发初衷场景里 spine 顺序是对的；本工具额外支持 **spine 也乱序**的输入：按话数把 `<spine>` 一并重排（cover 置首 → 页面升序 → theend 殿后），产物同样通过 `1..N` 连续校验。对初衷场景（spine 已有序）这是恒等操作，零影响。
 
-1. 解析 `vol.opf`：`manifest` 的 `id -> html` 映射 + `spine` 的 `idref` 顺序
-2. 按 `spine` 顺序读取每页 `html`，提取 `<title>第 N 頁</title>` 的真实页码与 `<img src="../image/...">`
-3. 无页码的封面/结束页自动补为 `0` / `max+1`
-4. 重命名：`cover.html` / `theend.html` 保留，其余 `html/page-{N}.html` 与 `image/{N}.jpg`（零填充宽度 `max(3, len(str(max)))`）
-5. 同步改写 `vol.opf` 与 `xml/vol.nav` 中的路径引用
-6. 重建 ZIP/EPUB，原地输出校验：回读 `spine` 页码需严格 `1..N`
+> 说明：早期 README 曾写"解决 spine 乱序"，那并非开发初衷的准确表述。准确能力是——**修复文件名乱序（核心），顺带支持 spine 乱序输入（扩展）**。
 
-未被任何页面引用的 `image/*` 原样保留，仅在日志中提示。
+### 当前适用边界
 
-## 效果对比
+本工具面向 Kmoe 系导出的 EPUB 布局：
 
-| 修正前（随机文件名，按文件名排序即乱序） | 修正后（按真实页码命名，文件名即顺序） |
-|---|---|
-| `html/page-a3f9c1.html` → 第 27 頁 | `html/page-027.html` → 第 27 頁 |
-| `html/page-7b2e00.html` → 第 3 頁 | `html/page-003.html` → 第 3 頁 |
-| `image/moe-x9k2p.jpg` | `image/027.jpg` |
+- opf 定位：查找 `vol.opf`（标准 EPUB 的 `content.opf` 暂不支持）
+- 页面文件：仅处理 `*.html`（`*.xhtml` 暂不支持，不会识别为封面/结尾页）
+- nav：查找 `xml/vol.nav`
 
-输出文件：`原名_修正版.epub`（与原文件同目录，不覆盖原文件）
+超出这些假设的通用 EPUB 支持见 [Roadmap](#roadmap)。所以"任意 EPUB 修复工具"还不是它的定位。
 
-## 功能特性
+## 工作原理
 
-- GUI 批量处理：多选 `*.epub / *.zip / *.cbz`，文件列表增删、进度与日志
-- CLI 无界面批处理：`--cli` 模式
-- 有序重命名：`html/page-001.html` / `image/001.jpg`，零填充对齐
-- 自动改写 `vol.opf` / `xml/vol.nav`，重建后自动校验 `spine 1..N`
-- 可选“完成后用 NeeView 打开”（路径可配置，默认留空）
-- Windows DPI 感知（`PER_MONITOR_V2`，在 `import tkinter` 之前生效）与 Tk 主题黑块闪烁修复
+1. 读取 zip 目录，定位 `vol.opf`；解析 `manifest`（id → href）与 `spine`（idref 顺序）
+2. 按 spine 顺序读每页 html，用 `<title>第N话</title>` 提取真实话数（无匹配时回退到 `<title>` 内任意数字）
+3. 无页码的封面页记为 0、结尾页记为 max+1；按话数升序重排（cover 置首 / theend 殿后）
+4. 重命名：`cover.html` / `theend.html` 保留，其余 → `html/page-{N:0width}.html`、`image/{N:0width}.jpg`（width = max(3, 最大话数位数)）
+5. 同步改写 `vol.opf` 的 href 引用、重建 `<spine>`，改写 `xml/vol.nav` 的 `src` 引用
+6. 清除 `kmoetag` / `kimageraw` / `raw` 脏属性；`mimetype` 置首且 ZIP_STORED，其余 ZIP_DEFLATED
+7. 写盘前**回读校验** spine 页码必须连续 `1..N`，失败即回滚（不产出文件、不留 `.tmp` 残留）
 
-## 环境要求
+## 构建与使用
 
-- Python 3.8+（推荐 3.10+）
-- 零三方依赖，仅标准库：`tkinter` / `zipfile` / `re` / `json` / `threading` 等
-- `tkinter`：Windows 官方 Python 已自带；Linux 需 `sudo apt install python3-tk`
-
-## 快速开始
-
-### 方式一：GUI（推荐）
+要求 Rust 1.70+（依赖 `zip` + `regex`，无 GUI 依赖）。
 
 ```bash
-# Windows 双击或命令行
-python kmoe_fix_gui.pyw
-
-# macOS / Linux
-python3 kmoe_fix_gui.pyw
-# 若提示 No module named '_tkinter'，先安装 python3-tk
+cargo build --release
+# 产物: target/release/kmoefix(.exe)
 ```
-
-1. 点击「添加文件…」选择一个或多个漫画包（`*.epub / *.zip / *.cbz`）
-2. （可选）勾选「完成后用 NeeView 打开」并配置 `NeeView.exe` 路径
-3. 点击「开始处理」，日志区查看进度
-4. 同目录生成 `*_修正版.epub`，用任意看图器按文件名排序即为正确顺序
-
-> Windows 上若双击 `.pyw` 无控制台、看不到报错，可用 `python kmoe_fix_gui.pyw` 启动以便查看日志。
-
-### 方式二：命令行（无 GUI）
 
 ```bash
-python kmoe_fix_gui.pyw --cli "漫画A.epub" "漫画B.zip" "漫画C.cbz"
-# 输出：
-# [OK] .../漫画A_修正版.epub
-#      spine=32 页, 页码严格 1..32
+kmoefix "D:\Manga\某漫画.epub"            # 单文件
+kmoefix a.epub b.epub                     # 批量
+kmoefix nonexist.epub                     # 跳过不存在: nonexist.epub
 ```
 
-- 支持一次传入多个文件
-- 退出码：全部成功 `0`，任一失败 `1`
-- 失败时会打印 `[FAIL] <原文件> -> <原因>`
+- 输出与源文件同目录，自动命名为 `*_修正版.epub`，已存在时递增为 `*_修正版 (1).epub` 等，**绝不覆盖原文件**
+- 处理成功退出码 0；任一文件失败退出码 1，单文件失败不影响后续文件
+- Windows 中文环境（GBK 控制台）下输出自动降级为替换符，不中断处理
 
-## 选项说明
+## 与原版 Python 的关系
 
-### NeeView 打开
+本仓库是对原 Python 版 `core.py` + CLI 的 Rust 重写（原版逻辑随本仓库替代而移除）。重命名/清脏/重打包语义与原版逐行对齐，唯一差异是上述"能力扩展"：
 
-- GUI 中「完成后用 NeeView 打开」默认关闭
-- 路径保存在程序同目录的 `kmoe_fix_config.json`（`{"neeview_path": "..."}`），该文件已加入 `.gitignore`，不会提交
-- 未勾选或路径不存在时，仅跳过打开，不影响修正流程
-- 批量处理时仅自动打开最后一个成功输出的文件
+| 输入 | 原版 Python | 本 Rust 版 |
+|---|---|---|
+| 文件名乱序、spine 正确（初衷场景） | 重命名修复 | 相同，产物语义一致 |
+| spine 也乱序 | 回读校验失败回滚 | 按话数重排修复 |
+| 缺页/话数不连续（如只有 1,3） | 回读校验失败回滚 | 相同（排序无法补齐缺页） |
 
-## 常见问题
+**一致性验证**：`tools/parity_check.py` 用同一批样本分别喂给原版 Python 与 Rust 版，逐项比对产物语义（文件集合、条目内容、opf/nav 引用、mimetype 首条 STORED）。12 个场景：9 个要求两侧逐字节一致，2 个为上述能力扩展（断言 Rust 修复成功且 spine 连续 1..N），1 个为两侧都失败回滚。
 
-**Q: 修正后原文件会被覆盖吗？**
-不会。输出为 `原名_修正版.epub`，原文件保留。
+## 测试
 
-**Q: 支持哪些输入格式？**
-本质是 ZIP，扩展名 `*.epub / *.zip / *.cbz` 均可，只要内部含 `vol.opf` 且页面含 `第 N 頁`。非 Kmoe 包会报错：`未找到 vol.opf` / `未找到「第 N 頁」页码`。
+```bash
+cargo test                 # Rust 测试（7 个用例）
+# 与原版 Python 对拍（可选，需先安装原仓库）
+$env:KMOE_PY_SRC = "D:\path\to\python版仓库"   # 指向含 src/core.py 的目录
+python tools/parity_check.py                   # 12 场景，0 失败为通过
+```
 
-**Q: 为什么有些包 `image/` 里有未引用的图片？**
-可能是封面缩略图等未被 `spine` 页面引用的资源，工具会原样保留，并在日志中列出 `未引用图片(已保留原样)`。
-
-**Q: 修正后校验失败怎么办？**
-工具会在重建后回读 `spine` 校验页码是否严格 `1..N`，失败会抛出 `输出验证失败` 并保留错误信息，请提 Issue 并附上脱敏后的日志（勿上传原漫画包）。
-
-**Q: Linux/macOS 上 GUI 起不来？**
-确认已安装 `python3-tk`，或直接使用 `--cli` 模式（无需 GUI）。
+`src/tests.rs` 场景继承自原仓库 `tests/test_fix_one.py`，并补了原测试没覆盖的缺口：乱序修复、乱序且无 cover/theend、无 `xml/vol.nav`、已存在 `(N)` 输出文件等。
 
 ## 项目结构
 
 ```
-kmoe-epub-order-fixer/
-├─ kmoe_fix_gui.pyw      # 主程序（GUI + CLI）
-├─ .gitignore            # Python / 本工具产物忽略规则
-├─ LICENSE               # MIT
-└─ README.md
+├── Cargo.toml            # 依赖：zip + regex
+├── src/
+│   ├── core.rs           # fix_one / get_unique_dst 核心逻辑
+│   ├── lib.rs            # crate 入口
+│   ├── main.rs           # CLI 批量入口
+│   └── tests.rs          # 集成测试
+├── tools/
+│   ├── parity_check.py   # Python 原版 vs Rust 对拍器
+│   └── make_sample.py    # 测试样本生成
 ```
 
-## 免责声明
+## Roadmap
 
-- 本工具仅用于修正**已合法获取**的个人藏品的阅读顺序与文件命名，不提供任何内容获取、解密或分发功能
-- 请遵守当地法律法规与平台服务条款，尊重版权
-- 输出文件仅供个人学习与整理使用
+- [ ] GUI（推荐 egui + rfd：纯 Rust、单 exe；替代原版 Tkinter 拖拽批量 + NeeView 联动）
+- [ ] `--check` 只读预检模式（不写文件，报告文件名/页序状态）
+- [ ] 通用 EPUB 支持：经 `META-INF/container.xml` 定位 opf、支持 `*.xhtml`、改写 nav 的 `epub:href` 引用
 
 ## 许可证
 
-[MIT](LICENSE) © 2026 Catapult291
+[MIT](LICENSE) — Copyright (c) 2026 Catapult291（原版逻辑作者）；本仓库为其 Rust 移植与替代。

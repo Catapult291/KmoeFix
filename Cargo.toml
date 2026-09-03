@@ -1,0 +1,18 @@
+[package]
+name = "kmoefix"
+version = "0.1.0"
+edition = "2021"
+description = "Fix Kmoe-exported comic EPUBs: reorder spine by page number, rename html/image assets, strip dirty tags, repack per EPUB spec (Rust port of KmoeFix core.py)"
+license = "MIT"
+
+[[bin]]
+name = "kmoefix"
+path = "src/main.rs"
+
+[lib]
+name = "kmoefix"
+path = "src/lib.rs"
+
+[dependencies]
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+regex = "1"

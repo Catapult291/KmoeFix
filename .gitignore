@@ -1,26 +1,17 @@
-# Python
+# Python（对拍脚本运行时）
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-.venv/
-venv/
-.env
 
-# 本工具运行时产生
-kmoe_fix_config.json
+# Rust 构建产物
+/target
+
+# 工具运行时产物（测试/对拍生成，不进仓库）
 *_修正版.epub
 *_修正版.zip
 *_修正版.cbz
 *.tmp
 
-# 调试/备份（不进仓库）
-*.bak*
-* bak_*
-测试_*.py
-启动_*.bat
-
-# 系统
+# 系统文件
 .DS_Store
 Thumbs.db
 Desktop.ini
