@@ -48,7 +48,7 @@ pub enum RotateCover {
 }
 
 /// [`fix_one_with`] 的可选行为。
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct FixOptions {
     pub rotate_cover: RotateCover,
 }

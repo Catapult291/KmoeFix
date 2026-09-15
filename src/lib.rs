@@ -14,12 +14,21 @@
 //! - 数值格式 `0{width}d` 是右对齐补零；`max(3, ...)` 兜底保证宽度至少 3。
 //! - 回读校验的 manifest 解析**只匹配新写入的 opf**，与输出前的全量解析是两套不同来源。
 
+mod cli;
 mod core;
 mod cover;
+mod gui;
 
+pub mod console;
+
+pub use cli::{parse_command_line, print_line, print_usage, Command};
 pub use core::{
     fix_one, fix_one_with, get_unique_dst, FixOptions, FixOutcome, KmoeError, RotateCover,
 };
+pub use gui::run_gui;
+
+/// 版本号：`Cargo.toml` 是唯一来源，release 标签、`--version` 与 GUI 标题都用它。
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// 暴露给测试的小工具（不构成公共 API）。
 #[doc(hidden)]

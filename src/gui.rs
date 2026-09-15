@@ -15,6 +15,9 @@
 //! 启动进度条 + 禁用按钮 + 后台线程逐个 `fix_one` + 队列轮询）、空列表与
 //! NeeView 路径缺失时的原版弹窗文案、结束时回写配置。配置持久化到 exe 同目录
 //! `kmoe_fix_config.json`，字段与 Python 版同构。
+//!
+//! 入口是 [`run_gui`]：CLI 与 GUI 共用同一个 exe（`src/main.rs` 分发），
+//! 无参数双击、或 `--gui [文件…]` 时由 `cli.rs` 走到这里。
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
@@ -27,7 +30,6 @@ use metrics::{CHK_BOX_SIDE, CHK_TEXT_GAP};
 
 /// 与 src/config.py 一致，可与原版共享同一份配置。
 const APP_NAME: &str = "KmoeFix";
-const VERSION: &str = "1.0.0";
 const CONFIG_NAME: &str = "kmoe_fix_config.json";
 
 const HINT_TEXT: &str = "拖拽 ZIP/EPUB/CBZ 到窗口，或点击添加";
@@ -137,13 +139,13 @@ struct Config {
 impl Config {
     /// 配置取值 → core 的回正策略。缺省即默认行为（按参照图自动回正），
     /// 非法取值也按默认走，不打断处理流程。
-    fn rotate_cover_mode(&self) -> kmoefix::RotateCover {
+    fn rotate_cover_mode(&self) -> crate::RotateCover {
         match self.rotate_cover.trim().to_ascii_lowercase().as_str() {
-            "off" => kmoefix::RotateCover::Off,
-            "90" => kmoefix::RotateCover::Fixed(90),
-            "180" => kmoefix::RotateCover::Fixed(180),
-            "270" => kmoefix::RotateCover::Fixed(270),
-            _ => kmoefix::RotateCover::Auto,
+            "off" => crate::RotateCover::Off,
+            "90" => crate::RotateCover::Fixed(90),
+            "180" => crate::RotateCover::Fixed(180),
+            "270" => crate::RotateCover::Fixed(270),
+            _ => crate::RotateCover::Auto,
         }
     }
 
@@ -672,7 +674,7 @@ impl Gui {
 
         let files: Vec<PathBuf> = self.files.clone();
         // 回正策略取自配置：缺省即「按包内参照图自动回正」，配置里写了角度或 off 才覆盖
-        let opts = kmoefix::FixOptions { rotate_cover: self.cfg.rotate_cover_mode() };
+        let opts = crate::FixOptions { rotate_cover: self.cfg.rotate_cover_mode() };
         std::thread::spawn(move || {
             let mut ok_cnt = 0usize;
             let mut fail_cnt = 0usize;
@@ -683,10 +685,10 @@ impl Gui {
                     tag: Tag::Info,
                     text: format!("▶ 处理: {name}"),
                 });
-                let dst = kmoefix::get_unique_dst(&src.to_string_lossy());
+                let dst = crate::get_unique_dst(&src.to_string_lossy());
                 let src_s = src.to_string_lossy().into_owned();
                 let dst_s = dst.to_string_lossy().into_owned();
-                let r = kmoefix::fix_one_with(&src_s, Some(&dst_s), Some(&|s: &str| {
+                let r = crate::fix_one_with(&src_s, Some(&dst_s), Some(&|s: &str| {
                     let _ = tx.send(Event::Log {
                         tag: Tag::Info,
                         text: format!("  {s}"),
@@ -1075,21 +1077,29 @@ impl eframe::App for Gui {
     }
 }
 
-fn main() -> eframe::Result<()> {
+/// 启动 GUI。`preload` 来自命令行 `--gui <文件…>`，装填进列表后不自动开始。
+pub fn run_gui(preload: Vec<PathBuf>) -> eframe::Result<()> {
     let cfg = Config::load();
+    let title = format!("{APP_NAME} v{} - Kmoe漫画包顺序修正", crate::VERSION);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([720.0, 560.0])
             .with_min_inner_size([680.0, 520.0])
-            .with_title(format!("{APP_NAME} v{VERSION} - Kmoe漫画包顺序修正")),
+            .with_title(title.clone()),
         ..Default::default()
     };
     eframe::run_native(
-        &format!("{APP_NAME} v{VERSION} - Kmoe漫画包顺序修正"),
+        &title,
         options,
         Box::new(move |cc| {
             install_theme(&cc.egui_ctx);
             let mut gui = Gui { cfg, log_stick: true, ..Default::default() };
+            if !preload.is_empty() {
+                let n = collect_into(&mut gui.files, preload.clone());
+                if n > 0 {
+                    gui.push_log(Tag::Info, format!("已添加 {n} 个文件（命令行）"));
+                }
+            }
             gui.setup_shot(&cc.egui_ctx);
             gui.setup_autotest();
             Ok(Box::new(gui))
@@ -1219,16 +1229,16 @@ mod tests {
     fn rotate_cover_config_maps_to_mode() {
         // 缺省（含空串）= 默认行为：按参照图自动回正
         let cfg = Config::default();
-        assert_eq!(cfg.rotate_cover_mode(), kmoefix::RotateCover::Auto, "缺省应自动回正");
+        assert_eq!(cfg.rotate_cover_mode(), crate::RotateCover::Auto, "缺省应自动回正");
 
         // 配置里显式写的角度 / off 仍然生效（GUI 无控件，只能手改配置文件）
         let cfg = Config { rotate_cover: "270".to_string(), ..Config::default() };
-        assert_eq!(cfg.rotate_cover_mode(), kmoefix::RotateCover::Fixed(270));
+        assert_eq!(cfg.rotate_cover_mode(), crate::RotateCover::Fixed(270));
         let cfg = Config { rotate_cover: " off ".to_string(), ..Config::default() };
-        assert_eq!(cfg.rotate_cover_mode(), kmoefix::RotateCover::Off);
+        assert_eq!(cfg.rotate_cover_mode(), crate::RotateCover::Off);
 
         // 非法取值按默认走，不打断处理流程
         let cfg = Config { rotate_cover: "xyz".to_string(), ..Config::default() };
-        assert_eq!(cfg.rotate_cover_mode(), kmoefix::RotateCover::Auto);
+        assert_eq!(cfg.rotate_cover_mode(), crate::RotateCover::Auto);
     }
 }

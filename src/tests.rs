@@ -357,18 +357,19 @@ fn test_no_nav_is_optional() {
 }
 
 #[test]
-fn test_gui_absent() {
-    // CLI 无参数时输出帮助并退出 0，与 Python「无参数启动 GUI」不同——GUI 未移植前先明确占位
-    let exe = std::env::var("CARGO_BIN_EXE_kmoefix").unwrap_or_else(|_| {
-        // 单元测试环境变量未必注入，退而求其次直接断言行为已由核心用例覆盖
-        return String::new();
-    });
-    if exe.is_empty() {
-        return;
-    }
-    let out = Command::new(exe).output().unwrap();    assert!(out.status.success());
-    let text = String::from_utf8_lossy(&out.stdout);
+fn test_cli_help_and_version() {
+    // 单 exe 分发（无参数=GUI 的分支在 cli.rs 的单测里断言，这里只跑不会开窗口的两个）：
+    // --help 输出用法、--version 输出版本，都走同一份解析逻辑
+    let Ok(exe) = std::env::var("CARGO_BIN_EXE_kmoefix") else { return };
+    let help = Command::new(&exe).arg("--help").output().unwrap();
+    assert!(help.status.success());
+    let text = String::from_utf8_lossy(&help.stdout);
     assert!(text.contains("用法"), "stdout: {text}");
+
+    let ver = Command::new(&exe).arg("--version").output().unwrap();
+    assert!(ver.status.success());
+    let text = String::from_utf8_lossy(&ver.stdout);
+    assert!(text.contains(env!("CARGO_PKG_VERSION")), "stdout: {text}");
 }
 
 #[test]

@@ -47,15 +47,24 @@ Kmoe 下载的漫画 EPUB（实为 ZIP）为防扒图，把所有页面与图片
 
 ```bash
 cargo build --release
-# 产物: target/release/kmoefix(.exe) 与 target/release/kmoefix_gui.exe
+# 产物: target/release/kmoefix.exe —— 命令行与图形界面是同一个程序
+
+RUSTFLAGS="-C target-feature=+crt-static" cargo build --release
+# 发布版用的静态链接构建：不依赖 VC++ 运行库，拷到任何 Windows x64 上直接跑
 ```
 
 ```bash
+kmoefix                                   # 不带参数：打开图形界面（双击 exe 也一样）
+kmoefix --gui "D:\Manga\某漫画.epub"      # 打开图形界面，并把文件装填进列表
 kmoefix "D:\Manga\某漫画.epub"            # 单文件
 kmoefix a.epub b.epub                     # 批量
 kmoefix nonexist.epub                     # 跳过不存在: nonexist.epub
 kmoefix --no-rotate-cover a.epub          # 不做任何图片处理（图片与原版逐字节一致）
+kmoefix --version                         # 版本号；--help 看用法
 ```
+
+- 命令行与图形界面是**同一个 exe**：不带参数（双击）开图形界面，带文件走命令行批处理，两者共用同一套核心逻辑
+- Windows 下按 GUI 子系统编译：双击不弹控制台窗口。在终端里运行时接管当前控制台输出；把文件拖到 exe 图标上（有参数但没有终端）时自己开一个控制台显示日志
 
 - 输出与源文件同目录，自动命名为 `*_修正版.epub`，已存在时递增为 `*_修正版 (1).epub` 等，**绝不覆盖原文件**
 - 处理成功退出码 0；任一文件失败退出码 1，单文件失败不影响后续文件
@@ -98,9 +107,9 @@ Kmoe 按「話」拼卷，每話首尾会插一张**站点自己的卡片**（�
 kmoefix a.epub                            # 默认：判出卡片页就移位
 ```
 
-### GUI（kmoefix_gui）
+### GUI（双击 exe，或 `kmoefix --gui`）
 
-egui + rfd 实现的原生单 exe 图形界面，**界面按原 Python 版 `src/gui.py`（Tkinter + ttk vista 主题）逐控件复刻**：窗口 720x560（最小 680x520），窗口标题、各控件的位置/尺寸/配色/字号均按原版 exe 在 150% 缩放下的实测像素对齐。
+egui + rfd 实现的原生单 exe 图形界面（与命令行共用同一个 exe），**界面按原 Python 版 `src/gui.py`（Tkinter + ttk vista 主题）逐控件复刻**：窗口 720x560（最小 680x520），窗口标题、各控件的位置/尺寸/配色/字号均按原版 exe 在 150% 缩放下的实测像素对齐。
 
 自上而下与原版一致：
 
@@ -118,7 +127,7 @@ GUI 无头自检（环境变量驱动，正常使用不受影响）：
 ```powershell
 $env:KMOEFIX_GUI_SHOT = "shot.png"        # 截图输出路径；进程截图后自动退出
 $env:KMOEFIX_GUI_AUTOTEST = "a.epub;b.zip" # 可选：启动即装填并自动处理，Done 后延迟截图
-.\target\release\kmoefix_gui.exe
+.\target\release\kmoefix.exe               # 不带参数即 GUI
 ```
 
 ## 与原版 Python 的关系
@@ -139,13 +148,13 @@ $env:KMOEFIX_GUI_AUTOTEST = "a.epub;b.zip" # 可选：启动即装填并自动�
 ## 测试
 
 ```bash
-cargo test                 # Rust 测试（21 个用例：核心 20 + GUI 配置映射 1）
+cargo test                 # Rust 测试（27 个用例：核心 20 + 命令行分发 6 + GUI 配置映射 1）
 # 与原版 Python 对拍（可选，需先安装原仓库）
 $env:KMOE_PY_SRC = "D:\path\to\python版仓库"   # 指向含 src/core.py 的目录
 python tools/parity_check.py                   # 12 场景，0 失败为通过
 ```
 
-`src/tests.rs` 场景继承自原仓库 `tests/test_fix_one.py`，并补了原测试没覆盖的缺口：乱序修复、乱序且无 cover/theend、无 `xml/vol.nav`、已存在 `(N)` 输出文件；侧放页回正的七类场景（参照图定方向、非封面/第 1 页的页同样回正、已正立不动、指定角度覆盖且不误伤、无参照图不转、相似度不足不转、默认开启与 `--no-rotate-cover` 保持原字节）；站点卡片页的三类场景（卡片改名移位且后续页编号前移、重跑产物结果不变、包内无 theend 卡时不动任何页）。`src/bin/kmoefix_gui.rs` 末尾另有 1 个用例覆盖「配置字段 `rotate_cover` → 回正策略」的映射（缺省与非法值按默认、`off` 关闭、角度生效）。
+`src/tests.rs` 场景继承自原仓库 `tests/test_fix_one.py`，并补了原测试没覆盖的缺口：乱序修复、乱序且无 cover/theend、无 `xml/vol.nav`、已存在 `(N)` 输出文件；侧放页回正的七类场景（参照图定方向、非封面/第 1 页的页同样回正、已正立不动、指定角度覆盖且不误伤、无参照图不转、相似度不足不转、默认开启与 `--no-rotate-cover` 保持原字节）；站点卡片页的三类场景（卡片改名移位且后续页编号前移、重跑产物结果不变、包内无 theend 卡时不动任何页）。`src/cli.rs` 另有 6 个用例覆盖命令行分发（无参数走 GUI、`--gui` 预装、带文件走 CLI、回正开关映射、`--help`/`--version` 优先、只有开关无文件时打印用法）；`src/gui.rs` 末尾有 1 个用例覆盖「配置字段 `rotate_cover` → 回正策略」的映射（缺省与非法值按默认、`off` 关闭、角度生效）。
 
 产物语义校验（含侧放页朝向）：
 
@@ -164,10 +173,11 @@ python tools/check_output.py "某漫画_修正版.epub"                # 不带�
 ├── src/
 │   ├── core.rs           # fix_one / get_unique_dst 核心逻辑
 │   ├── cover.rs          # 侧放页判定与像素回正（参照图定方向）
+│   ├── cli.rs            # 命令行解析与分发（无参数=GUI、--gui、--version、用法文本）
+│   ├── console.rs        # Windows 控制台接管（GUI 子系统的 exe 跑 CLI 时的输出）
+│   ├── gui.rs            # 图形界面（egui + rfd，含无头截图自检）
 │   ├── lib.rs            # crate 入口
-│   ├── main.rs           # CLI 批量入口
-│   ├── bin/
-│   │   └── kmoefix_gui.rs # GUI（egui + rfd，含无头截图自检）
+│   ├── main.rs           # 单 exe 入口：控制台接管 + 分发到 GUI / CLI
 │   └── tests.rs          # 集成测试
 ├── tools/
 │   ├── parity_check.py   # Python 原版 vs Rust 对拍器
