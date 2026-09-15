@@ -1,20 +1,19 @@
-//! kmoefix GUI —— 原 Python 版 `src/gui.py`（Tkinter + ttk vista 主题）的 Rust 复刻。
+//! KmoeFix 的图形界面：egui + rfd 原生窗口，与命令行共用同一套核心逻辑。
 //!
-//! 布局与观感按原版 exe（720x560 客户区，150% DPI）实测像素还原，自上而下：
+//! 窗口客户区 720x560（最小 680x520），自上而下：
 //!
 //! ```text
 //! 拖拽提示标签（Segoe UI 9pt）
-//! Listbox（Consolas 9pt，extended 多选）+ 垂直滚动条          ← 可伸缩
+//! 文件列表（Consolas 9pt，多选）+ 垂直滚动条                 ← 可伸缩
 //! 按钮行：添加文件… / 移除选中 / 清空 ………………… 开始处理
-//! LabelFrame「选项」：复选框 + NeeView 路径 + Entry + 浏览…
-//! 进度条（indeterminate；静止时左侧常驻绿色块，与原版一致）
-//! 「日志:」+ Text（Consolas 9pt，三色 tag，可滚动）          ← 可伸缩
+//! 「选项」框：复选框 + NeeView 路径 + 输入框 + 浏览…
+//! 进度条（indeterminate；静止时绿块停在最左）
+//! 「日志:」+ 日志文本区（Consolas 9pt，三色，可滚动）        ← 可伸缩
 //! ```
 //!
-//! 行为对齐 `src/gui.py`：添加/拖拽去重、移除选中、清空、开始处理（清空日志 +
-//! 启动进度条 + 禁用按钮 + 后台线程逐个 `fix_one` + 队列轮询）、空列表与
-//! NeeView 路径缺失时的原版弹窗文案、结束时回写配置。配置持久化到 exe 同目录
-//! `kmoe_fix_config.json`，字段与 Python 版同构。
+//! 交互：添加/拖拽去重、移除选中、清空、开始处理（清空日志 + 启动进度条 +
+//! 禁用按钮 + 后台线程逐个 `fix_one` + 队列轮询）、空列表与 NeeView 路径缺失时
+//! 的弹窗提示、结束时回写配置。配置持久化到 exe 同目录 `KmoeFix.json`。
 //!
 //! 入口是 [`run_gui`]：CLI 与 GUI 共用同一个 exe（`src/main.rs` 分发），
 //! 无参数双击、或 `--gui [文件…]` 时由 `cli.rs` 走到这里。
@@ -28,9 +27,9 @@ use eframe::egui;
 use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Stroke, StrokeKind, Vec2};
 use metrics::{CHK_BOX_SIDE, CHK_TEXT_GAP};
 
-/// 与 src/config.py 一致，可与原版共享同一份配置。
+/// 应用名与配置文件名：配置写在 exe 同目录，便于程序整体搬移。
 const APP_NAME: &str = "KmoeFix";
-const CONFIG_NAME: &str = "kmoe_fix_config.json";
+const CONFIG_NAME: &str = "KmoeFix.json";
 
 const HINT_TEXT: &str = "拖拽 ZIP/EPUB/CBZ 到窗口，或点击添加";
 const LOG_LABEL: &str = "日志:";
@@ -46,7 +45,7 @@ const BTN_BROWSE: &str = "浏览…";
 const FONT_UI: f32 = 12.0; // Segoe UI 9pt @150% DPI
 const FONT_MONO: f32 = 12.0; // Consolas 9pt @150% DPI
 
-// ---------------- 度量（对齐原版实测，单位=逻辑像素） ----------------
+// ---------------- 度量（单位=逻辑像素） ----------------
 
 mod metrics {
     pub const MARGIN: f32 = 10.0;
@@ -66,18 +65,18 @@ mod metrics {
     /// Listbox 单行高（Consolas 9pt）。
     pub const ROW_H: f32 = 14.0;
     pub const SB_W: f32 = 11.5;
-    /// 固定占用窗口高度合计；其余按原版比例分给列表与日志两个可伸缩区。
+    /// 固定占用窗口高度合计；其余高度按比例分给列表与日志两个可伸缩区。
     pub const FIXED: f32 = 235.9;
-    /// 列表 : 日志 的伸缩比例（原版 pack expand 的分配结果）。
+    /// 列表 : 日志 的伸缩比例。
     pub const LIST_SHARE: f32 = 0.4703;
-    /// 列表框/日志框相对窗口右边距额外内收（原版滚动条占位）。
+    /// 列表框/日志框相对窗口右边距额外内收（滚动条占位）。
     pub const RIGHT_INSET: f32 = 3.3;
-    /// ttk vista 复选框：方框边长、方框到文字的间距（原版实测）。
+    /// 复选框：方框边长、方框到文字的间距。
     pub const CHK_BOX_SIDE: f32 = 13.0;
     pub const CHK_TEXT_GAP: f32 = 5.0;
 }
 
-// ---------------- 配色（原版 exe 截图像素取色） ----------------
+// ---------------- 配色 ----------------
 
 mod color {
     use super::egui::Color32;
@@ -180,7 +179,7 @@ enum Tag {
 }
 
 impl Tag {
-    /// 与原版 txt.tag_configure 一致：ok #1E9E5A / err #D64545 / info #2B7DE9
+    /// 日志三色：ok #1E9E5A / err #D64545 / info #2B7DE9
     fn color(self) -> Color32 {
         match self {
             Tag::Ok => Color32::from_rgb(0x1E, 0x9E, 0x5A),
@@ -275,7 +274,7 @@ impl Layout {
 fn button(ui: &mut egui::Ui, rect: Rect, text: &str, enabled: bool) -> bool {
     let resp = ui.interact(
         rect,
-        ui.id().with(("kmoefix_btn", text)),
+        ui.id().with(("KmoeFix_btn", text)),
         if enabled { egui::Sense::click() } else { egui::Sense::hover() },
     );
     let hovered = enabled && resp.hovered();
@@ -298,7 +297,7 @@ fn button(ui: &mut egui::Ui, rect: Rect, text: &str, enabled: bool) -> bool {
     let p = ui.painter();
     p.rect_filled(rect, CornerRadius::same(2), face);
     p.rect_stroke(rect, CornerRadius::same(2), Stroke::new(1.0_f32, border), StrokeKind::Inside);
-    // ttk vista 按钮的立体感：内侧上高光 / 下阴影
+    // 按钮的立体感：内侧上高光 / 下阴影
     if enabled {
         let inner = rect.shrink(1.0);
         p.line_segment(
@@ -327,7 +326,7 @@ fn sunken(p: &egui::Painter, rect: Rect) {
     );
 }
 
-/// ttk vista Entry：白底 + 上/左浅边、下/右阴影（与列表框的凹陷边框不同）。
+/// 输入框：白底 + 上/左浅边、下/右阴影（与列表框的凹陷边框不同）。
 fn entry_field(p: &egui::Painter, rect: Rect) {
     p.rect_filled(rect, CornerRadius::ZERO, color::FIELD_FACE);
     let t = Stroke::new(1.0_f32, color::ENTRY_TOP);
@@ -362,7 +361,7 @@ fn label_frame(ui: &mut egui::Ui, rect: Rect, title: &str) {
     );
 }
 
-/// ttk vista 复选框：未选=浅灰面 + 灰边；选中=蓝底白勾。
+/// 复选框：未选=浅灰面 + 灰边；选中=蓝底白勾。
 fn checkbox(ui: &mut egui::Ui, rect: Rect, checked: bool, label: &str) -> bool {
     let p = ui.painter();
     let box_side = CHK_BOX_SIDE;
@@ -401,13 +400,13 @@ fn checkbox(ui: &mut egui::Ui, rect: Rect, checked: bool, label: &str) -> bool {
 
     let resp = ui.interact(
         rect,
-        ui.id().with(("kmoefix_chk", label)),
+        ui.id().with(("KmoeFix_chk", label)),
         egui::Sense::click(),
     );
     resp.clicked()
 }
 
-/// 进度条：ttk vista indeterminate。静止时绿块停在最左（与原版一致）。
+/// 进度条：indeterminate 样式，静止时绿块停在最左。
 fn progressbar(p: &egui::Painter, rect: Rect, phase: Option<f32>) {
     p.rect_filled(rect, CornerRadius::ZERO, color::PROG_TROUGH);
     p.rect_stroke(rect, CornerRadius::ZERO, Stroke::new(1.0_f32, color::PROG_BORDER2), StrokeKind::Inside);
@@ -432,7 +431,7 @@ fn progressbar(p: &egui::Painter, rect: Rect, phase: Option<f32>) {
     );
 }
 
-/// ttk vista 垂直滚动条：轨道 + 上下箭头 + 滑块。返回（点击箭头/轨道后的新偏移）。
+/// 垂直滚动条：轨道 + 上下箭头 + 滑块。返回（点击箭头/轨道后的新偏移）。
 fn scrollbar(
     ui: &mut egui::Ui,
     rect: Rect,
@@ -449,7 +448,7 @@ fn scrollbar(
     let mut result = None;
 
     for (r, up_dir) in [(up, true), (down, false)] {
-        let resp = ui.interact(r, ui.id().with(("kmoefix_sb_arrow", up_dir, rect.top() as i32)), egui::Sense::click());
+        let resp = ui.interact(r, ui.id().with(("KmoeFix_sb_arrow", up_dir, rect.top() as i32)), egui::Sense::click());
         if resp.hovered() {
             p.rect_filled(r, CornerRadius::ZERO, Color32::from_rgb(0xE5, 0xF1, 0xFB));
         }
@@ -484,12 +483,12 @@ fn scrollbar(
         p.rect_filled(thumb, CornerRadius::same(2), color::SB_THUMB);
         p.rect_stroke(thumb, CornerRadius::same(2), Stroke::new(1.0_f32, color::SB_THUMB_BORDER), StrokeKind::Inside);
 
-        let resp = ui.interact(thumb, ui.id().with(("kmoefix_sb_thumb", rect.top() as i32)), egui::Sense::click_and_drag());
+        let resp = ui.interact(thumb, ui.id().with(("KmoeFix_sb_thumb", rect.top() as i32)), egui::Sense::click_and_drag());
         if resp.dragged() && max_off > 0.0 {
             let usable = (track.height() - thumb_h).max(1.0);
             result = Some(offset + resp.drag_delta().y / usable * max_off);
         } else if resp.clicked() {
-            // 点击滑块外的轨道：上下翻页（与原版 Tk 行为近似）
+            // 点击滑块外的轨道：上下翻页
             if let Some(mouse) = ui.ctx().pointer_interact_pos() {
                 let dir = if mouse.y < thumb.top() { -1.0 } else { 1.0 };
                 result = Some(offset + 0.9 * view_h * dir);
@@ -525,7 +524,7 @@ struct Gui {
     anchor: Option<usize>,
     list_offset: f32,
     log_offset: f32,
-    /// 日志是否吸底（收到新行后自动滚到底部，等价原版 txt.see("end")）。
+    /// 日志是否吸底（收到新行后自动滚到底部）。
     log_stick: bool,
     /// 进度条动画相位。
     phase: f32,
@@ -580,7 +579,7 @@ impl Gui {
         self.log_stick = true;
     }
 
-    /// 收完队列事件；返回是否收到 Done（对齐原版 poll：Done 时停进度条、回写配置）。
+    /// 收完队列事件；返回是否收到 Done（Done 时停进度条、回写配置）。
     fn pump(&mut self, ctx: &egui::Context) {
         let mut finished = false;
         if let Some(rx) = self.rx.take() {
@@ -613,8 +612,8 @@ impl Gui {
         }
     }
 
-    /// 原版 poll 的 NeeView 分支：路径不存在时弹 askyesno；
-    /// 注意原版的 Popen 在 else 分支——选「是」也只继续、并不打开（此处保持一致）。
+    /// NeeView 分支：勾选了「完成后打开」且路径不存在时弹确认框；
+    /// 框里无论选「是」还是「否」都只结束、不尝试打开。
     fn launch_neeview(&mut self, last_ok: Option<PathBuf>) {
         let Some(ok_path) = last_ok else { return };
         let nee = self.cfg.neeview_path.trim().to_string();
@@ -646,7 +645,7 @@ impl Gui {
         }
     }
 
-    /// 原版 start：空列表弹警告；否则清空日志、启动进度条、禁用按钮、开后台线程。
+    /// 开始处理：空列表弹警告；否则清空日志、启动进度条、禁用按钮、开后台线程。
     fn start(&mut self) {
         if self.files.is_empty() {
             let _ = rfd::MessageDialog::new()
@@ -705,8 +704,7 @@ impl Gui {
                     }
                     Err(e) => {
                         fail_cnt += 1;
-                        // 原版此处还有一行 traceback.format_exc() 末行（异常类名 + 消息）；
-                        // Rust 侧 KmoeError 只有消息本身，信息与上一行重复，故不再重复打印。
+                        // KmoeError 只带消息本身，上一行已经打印过，不再重复。
                         let _ = tx.send(Event::Log {
                             tag: Tag::Err,
                             text: format!("✘ 失败 {name}: {}", e.msg),
@@ -726,8 +724,7 @@ fn is_supported(p: &Path) -> bool {
             .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "zip" | "epub" | "cbz"))
 }
 
-/// 把路径加入列表；目录则收集目录下直接包含的支持文件。返回新增数（去重）。
-/// 对齐原版 on_drop/add_files：文件加列表、目录 glob *.zip/*.epub/*.cbz。
+/// 文件直接加入列表；目录则收集其中直接包含的 `*.zip` / `*.epub` / `*.cbz`。返回新增数（去重）。
 fn collect_into(files: &mut Vec<PathBuf>, paths: Vec<PathBuf>) -> usize {
     let mut added = 0usize;
     for p in paths {
@@ -804,8 +801,8 @@ impl Gui {
             );
         }
 
-        // 点击行：原版 Listbox extended 多选（普通=单选、Ctrl=切换、Shift=连选）
-        let resp = ui.interact(inner, ui.id().with("kmoefix_file_list"), egui::Sense::click());
+        // 点击行：多选（普通=单选、Ctrl=切换、Shift=连选）
+        let resp = ui.interact(inner, ui.id().with("KmoeFix_file_list"), egui::Sense::click());
         if resp.clicked() {
             let multi = ui.input(|i| i.modifiers.command || i.modifiers.shift);
             let shift = ui.input(|i| i.modifiers.shift);
@@ -847,8 +844,8 @@ impl Gui {
         label_frame(ui, l.opts, OPTS_LABEL);
         let content_left = l.opts.left() + 14.3;
 
-        // 原版「选项」框第一行只有一个复选框：自动回正已是默认行为（只认包内参照图），
-        // 界面上不再有开关，它的点击区横跨整行。整框高度与其它区域位置与原版一致。
+        // 「选项」框第一行只有一个复选框：自动回正已是默认行为（只认包内参照图），
+        // 界面上不放开关，它的点击区横跨整行。
         let row_top = l.opts.top() + 21.6;
         let row_bottom = l.opts.top() + 43.6;
         let chk_row = Rect::from_min_max(
@@ -1107,7 +1104,7 @@ pub fn run_gui(preload: Vec<PathBuf>) -> eframe::Result<()> {
     )
 }
 
-/// 与原版 ttk vista 一致：浅色主题 + Segoe UI / Consolas / 微软雅黑。
+/// 浅色主题 + Segoe UI / Consolas / 微软雅黑。
 /// egui 默认字体不覆盖中文，缺了会在界面上渲染成方块。
 fn install_theme(ctx: &egui::Context) {
     ctx.set_visuals(egui::Visuals::light());

@@ -1,5 +1,4 @@
-//! fix_one 的行为测试。
-//! 场景来自原仓库 tests/test_fix_one.py 的 make_epub 构造法 + 追加补缺场景。
+//! fix_one 的行为测试：核心修复流程、侧放页回正、站点卡片页、命令行分发与 GUI 配置映射。
 
 use std::fs;
 use std::io::Write;
@@ -146,7 +145,7 @@ fn read_text(z: &mut ZipArchive<fs::File>, name: &str) -> String {
 use std::io::Read;
 
 fn tdir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("kmoefix_test_{tag}_{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("KmoeFix_test_{tag}_{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     dir
@@ -231,8 +230,7 @@ fn test_sorted_epub_fix() {
 
 #[test]
 fn test_shuffled_epub_repairs() {
-    // 能力扩展：Python 原版对 spine 乱序输入只能回滚（从不排序，见 core.rs
-    // 「按话数排序」注释）；本版按话数升序重排，乱序输入应修复成功，
+    // spine 乱序输入按话数升序重排（见 core.rs「按话数排序」注释），应修复成功，
     // 且产物必须通过回读校验（连续 1..N，否则 fix_one 自己会抛错）。
     let td = tdir("shuffled_repair");
     let src = td.join("b.epub");
@@ -338,7 +336,7 @@ fn test_shuffled_no_cover_theend_repairs() {
 
 #[test]
 fn test_no_nav_is_optional() {
-    // 找不到 xml/vol.nav 不应报错：Python 原版以 `if nav_name:` 跳过 nav 改写
+    // 找不到 xml/vol.nav 不应报错：跳过 nav 改写
     let td = tdir("nonav");
     let src = td.join("nonav.epub");
     let spine = [("html/page-1.html", "1"), ("html/page-2.html", "2")];
@@ -360,7 +358,7 @@ fn test_no_nav_is_optional() {
 fn test_cli_help_and_version() {
     // 单 exe 分发（无参数=GUI 的分支在 cli.rs 的单测里断言，这里只跑不会开窗口的两个）：
     // --help 输出用法、--version 输出版本，都走同一份解析逻辑
-    let Ok(exe) = std::env::var("CARGO_BIN_EXE_kmoefix") else { return };
+    let Ok(exe) = std::env::var("CARGO_BIN_EXE_KmoeFix") else { return };
     let help = Command::new(&exe).arg("--help").output().unwrap();
     assert!(help.status.success());
     let text = String::from_utf8_lossy(&help.stdout);
@@ -767,7 +765,7 @@ fn test_cover_rotation_not_needed() {
 #[test]
 fn test_cover_rotation_default_on_and_off_keeps_pixels() {
     // 默认（fix_one = FixOptions::default）已开启回正：有参照图的侧放页被转正；
-    // 显式 Off 才保留原字节（那是与原版逐字节一致的路径）
+    // 显式 Off 才保留图片原字节
     let td = tdir("rot_off");
     let src = td.join("a.epub");
     let raw = synth_image(800, 400, 7);
@@ -795,7 +793,7 @@ fn test_cover_rotation_default_on_and_off_keeps_pixels() {
 #[test]
 fn test_cli_rotate_cover_flag() {
     // CLI 开关：--help 提到开关；--no-rotate-cover 可用；取值非法时以退出码 2 拒绝
-    let Ok(exe) = std::env::var("CARGO_BIN_EXE_kmoefix") else { return };
+    let Ok(exe) = std::env::var("CARGO_BIN_EXE_KmoeFix") else { return };
     let help = Command::new(&exe).arg("--help").output().unwrap();
     assert!(help.status.success());
     let text = String::from_utf8_lossy(&help.stdout);

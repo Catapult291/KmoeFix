@@ -1,15 +1,16 @@
 [package]
-name = "kmoefix"
+name = "KmoeFix"
 version = "1.0.0"
 edition = "2021"
-description = "Fix Kmoe-exported comic EPUBs: reorder spine by page number, rename html/image assets, strip dirty tags, repack per EPUB spec (Rust port of KmoeFix core.py)"
+description = "Repair shuffled comic EPUB page order: rename pages by real page number, reorder spine, move site card pages to the end, strip dirty attributes, repack per EPUB spec"
 license = "MIT"
 
 [[bin]]
-name = "kmoefix"
+name = "KmoeFix"
 path = "src/main.rs"
 
 [lib]
+# rustc 要求 crate 名为 snake_case，故只有产出物与包名用 KmoeFix
 name = "kmoefix"
 path = "src/lib.rs"
 

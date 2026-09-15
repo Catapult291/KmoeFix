@@ -1,6 +1,6 @@
 //! 命令行解析与分发：CLI 与 GUI 是同一个 exe。
 //!
-//! - 不带参数（双击 exe）→ 图形界面，与原 Python 版一致
+//! - 不带参数（双击 exe）→ 图形界面
 //! - `--gui [文件…]` → 图形界面，并把给定文件装填进列表
 //! - `--help` / `-h`、`--version` / `-V` → 打印后退出
 //! - 其余参数 → 命令行批处理（`--no-rotate-cover` / `--rotate-cover=…` + 文件）
@@ -74,9 +74,8 @@ pub fn parse_command_line(args: Vec<String>) -> Result<Command, String> {
     Ok(Command::Cli { opts, files })
 }
 
-/// 输出一行。Windows 控制台可能是 GBK 代码页（chcp 936）。输出先尝试按 UTF-8 写，
-/// 失败则退化为「替换不可编码字节」，避免像 Python 直接 print 那样抛
-/// UnicodeEncodeError 中断批量处理。
+/// 输出一行。Windows 控制台可能是 GBK 代码页（chcp 936）。先尝试按 UTF-8 写，
+/// 失败则退化为「替换不可编码字节」，不因编码错误中断批量处理。
 pub fn print_line(s: &str) {
     let stdout = std::io::stdout();
     let mut lock = stdout.lock();
@@ -95,15 +94,15 @@ pub fn print_line(s: &str) {
 }
 
 pub fn print_usage() {
-    print_line(&format!("kmoefix {VERSION} - 修复 Kmoe 导出 EPUB（CLI 与图形界面同一个程序）"));
+    print_line(&format!("KmoeFix {VERSION} - 修复 Kmoe 导出 EPUB（CLI 与图形界面同一个程序）"));
     print_line("用法:");
-    print_line("  kmoefix                             不带参数：打开图形界面（双击 exe 同样）");
-    print_line("  kmoefix <file.epub> ...             命令行批量处理");
-    print_line("  kmoefix --gui [file.epub ...]       打开图形界面，并把文件装填进列表");
-    print_line("  kmoefix --help | --version");
+    print_line("  KmoeFix                             不带参数：打开图形界面（双击 exe 同样）");
+    print_line("  KmoeFix <file.epub> ...             命令行批量处理");
+    print_line("  KmoeFix --gui [file.epub ...]       打开图形界面，并把文件装填进列表");
+    print_line("  KmoeFix --help | --version");
     print_line("");
     print_line("选项（仅命令行批处理）:");
-    print_line("  --no-rotate-cover     不做任何图片处理（图片与原版逐字节一致；站点卡片页的移位照常）");
+    print_line("  --no-rotate-cover     不做任何图片处理（图片逐字节原样写出；站点卡片页的移位照常）");
     print_line("  --rotate-cover=90     判出侧放后按顺时针 90 度回正（覆盖自动判定的方向；180/270 同理）");
     print_line("  不带开关时 = 自动回正：只有包内有同名参照图 <图名>-RAWIMAGE.<ext> 时才转，");
     print_line("  参照图缺失或相似度不足一律不动，不做尺寸猜测");
@@ -123,7 +122,7 @@ mod tests {
 
     #[test]
     fn no_args_opens_gui() {
-        // 与原 Python 版一致：双击（无参数）打开图形界面
+        // 双击（无参数）打开图形界面
         assert_eq!(parse_command_line(args(&[])), Ok(Command::Gui { preload: Vec::new() }));
     }
 

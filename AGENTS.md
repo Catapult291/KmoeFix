@@ -8,13 +8,13 @@
 
 ## 项目事实(新建时先与 AI 逐项确认填写)
 
-- 项目一句话定位:kmoefix —— 把漫画 EPUB 按真实话数重命名页面/图片、重排 spine、清除脏标签,输出符合 EPUB 规范的 `*_修正版.epub`(Rust 实现,含 CLI 与 GUI)。
+- 项目一句话定位:KmoeFix —— 把漫画 EPUB 按真实话数重命名页面/图片、重排 spine、清除脏标签,输出符合 EPUB 规范的 `*_修正版.epub`(Rust 实现,含 CLI 与 GUI)。
 - 仓库来源:**从零新建**(GitHub 网页 New repository),不是 fork(`gh repo view` 确认 isFork=false)。
 - 目标远程地址:https://github.com/Catapult291/KmoeFix.git(origin,分支 main 跟踪 origin/main)。
 - 是否要公开:是(仓库当前 visibility=PUBLIC)。
 - 开源许可证(发布前必选):MIT(根目录 LICENSE 已放好,Copyright (c) 2026 Catapult291;Cargo.toml 已写 `license = "MIT"`)。
-- 主要语言 / 构建命令:Rust(edition 2021);构建 `cargo build --release`(产物 `target/release/kmoefix.exe` —— 命令行与 GUI 是同一个 exe;发布版另加 `RUSTFLAGS="-C target-feature=+crt-static"` 静态链接);测试 `cargo test`;与 Python 原版对拍 `python tools/parity_check.py`。
-- 是否已有 .gitignore(若无,建仓库第一步先补上):已有。根目录 .gitignore 覆盖 `/target`、`__pycache__/`、`*.py[cod]`、`*_修正版.epub|zip|cbz`、`*.tmp`、`.DS_Store`、`Thumbs.db`、`Desktop.ini`。
+- 主要语言 / 构建命令:Rust(edition 2021);构建 `cargo build --release`(产物 `target/release/KmoeFix.exe` —— 命令行与 GUI 是同一个 exe;发布版另加 `RUSTFLAGS="-C target-feature=+crt-static"` 静态链接);测试 `cargo test`(27 个用例)。
+- 是否已有 .gitignore(若无,建仓库第一步先补上):已有。根目录 .gitignore 覆盖 `/target`、`*_修正版.epub|zip|cbz`、`*.tmp`、`/*.epub`、`/*.exe`、`.grok/`、`/testdata/`、`.DS_Store`、`Thumbs.db`、`Desktop.ini`。
 
 ## 铁律(违反任何一条,先停下来说明并等我确认)
 

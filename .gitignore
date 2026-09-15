@@ -1,18 +1,14 @@
-# Python（对拍脚本运行时）
-__pycache__/
-*.py[cod]
-
 # Rust 构建产物
 /target
 
-# 工具运行时产物（测试/对拍生成，不进仓库）
+# 运行时产物（测试生成，不进仓库）
 *_修正版.epub
 *_修正版.zip
 *_修正版.cbz
 *.tmp
 
 # GUI 运行时配置（写在 exe 同目录，含本机 NeeView 路径）
-kmoe_fix_config.json
+KmoeFix.json
 
 # 根目录手头样本与构建产物（源码仓库不收二进制，exe 走 Release 分发）
 /*.epub

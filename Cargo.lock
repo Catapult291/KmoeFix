@@ -3,6 +3,21 @@
 version = 4
 
 [[package]]
+name = "KmoeFix"
+version = "1.0.0"
+dependencies = [
+ "crc32fast",
+ "eframe",
+ "flate2",
+ "image",
+ "regex",
+ "rfd",
+ "serde",
+ "serde_json",
+ "zip",
+]
+
+[[package]]
 name = "ab_glyph"
 version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1715,21 +1730,6 @@ name = "khronos_api"
 version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
-
-[[package]]
-name = "kmoefix"
-version = "1.0.0"
-dependencies = [
- "crc32fast",
- "eframe",
- "flate2",
- "image",
- "regex",
- "rfd",
- "serde",
- "serde_json",
- "zip",
-]
 
 [[package]]
 name = "libc"

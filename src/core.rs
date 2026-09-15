@@ -1,10 +1,8 @@
-//! fix_one / get_unique_dst 的 Rust 移植（对应 src/core.py）。
+//! 修复流程主体：解析 opf/spine → 按话数排序 → 重命名条目 → 改写引用 → 回读校验。
 //!
-//! 结构上按 Python 原文件的段落排布，便于日后与原版逐行对拍。
-//!
-//! 除重命名/重排外，本版另做一件原版没有的事：**把 Kmoe 站点自己插在正文中间的
-//! 卡片页移出正文编号、排到卷末**（详见 [`detect_card_pages`]）。它只在确实判出卡片页
-//! 时才改变产物，判不出卡片的包与之前逐字节相同；图片像素照旧一个都不动。
+//! 除重命名/重排外另做一件事：**把站点插在正文中间的卡片页移出正文编号、排到卷末**
+//! （详见 [`detect_card_pages`]）。它只在确实判出卡片页时才改变页序，判不出卡片的包
+//! 页序保持原样；本模块不碰图片像素（回正在 [`crate::cover`]）。
 
 use crate::cover;
 use regex::Regex;
@@ -16,7 +14,7 @@ use std::sync::OnceLock;
 use zip::write::SimpleFileOptions;
 use zip::ZipArchive;
 
-/// 输出文件名后缀（与 src/config.py 的 OUT_SUFFIX 一致）。
+/// 输出文件名后缀。
 pub const OUT_SUFFIX: &str = "_修正版";
 
 /// 产物里站点卡片页的命名前缀（`html/kmoe-001.html`、`image/kmoe-001.png`）。
@@ -38,7 +36,7 @@ pub enum RotateCover {
     /// 或相似度不足时不动该图。要恢复「图片一个像素都不动」用 [`RotateCover::Off`]。
     #[default]
     Auto,
-    /// 不做任何图片处理：图片逐字节与 Python 原版一致。
+    /// 不做任何图片处理：图片逐字节原样写出。
     /// （站点卡片页的移位与它无关，始终执行——那不是图片处理。）
     Off,
     /// 已判出侧放（同样只认参照图）后按指定角度（顺时针 90/180/270）回正——用于覆盖
@@ -146,7 +144,7 @@ fn spine_open_re() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"<spine[^>]*>").unwrap())
 }
 
-/// `os.path.splitext`（Windows 语义）的 Rust 移植。
+/// 拆扩展名：只认最后一个 `.`，路径分隔符 `/` 与 `\` 等效。
 /// 注意 `image/theend` 这类无扩展名路径返回 `("image/theend", "")`。
 fn split_ext(p: &str) -> (&str, &str) {
     let name_start = p.rfind(['/', '\\']).map(|i| i + 1).unwrap_or(0);
@@ -178,7 +176,7 @@ pub fn get_unique_dst(src: &str) -> PathBuf {
     }
 }
 
-/// 一组（旧 href → 新 href）映射，对应 Python 的 dict（插入序）。
+/// 一组（旧 href → 新 href）映射，保持插入顺序。
 struct OrderedMap {
     keys: Vec<String>,
     vals: Vec<String>,
@@ -318,7 +316,7 @@ pub fn fix_one_with(
         }
     };
 
-    // ---- 目标路径决策（与 Python 完全一致）----
+    // ---- 目标路径决策 ----
     let dst_path: PathBuf = match dst {
         None => get_unique_dst(src),
         Some(d) => {
@@ -480,9 +478,6 @@ pub fn fix_one_with(
     // 对 spine 也乱的文件，按话数升序重排让产物同时通过回读校验（连续
     // 1..N）。排序对已升序输入是稳定恒等操作，对初衷场景零影响；对
     // spine 乱序输入则把「回滚报错」变成「可修复」。
-    //
-    // 原版 Python（kmoe_fix_src）没有这段排序：spine 乱序输入一律在回读
-    // 校验失败回滚。
     entries.sort_by(|a, b| {
         // cover(0) 置首 → 正文页按 num 升序 → 站点卡片页 → theend 殿后
         let rank = |e: &Entry| -> (u8, u32) {
@@ -514,8 +509,8 @@ pub fn fix_one_with(
     let width: usize = if max_page > 0 {
         usize::max(3, max_page.to_string().len())
     } else {
-        // 保持原句柄：max_page==0 时 Python 侧已抛“未从任何页面解析到话数”，
-        // 但为可读性仍给默认宽度 3。
+        // 这个分支不会再走到写盘（前面已按「未从任何页面解析到话数」报错），
+        // 宽度取 3 只为兜底。
         3
     };
 
@@ -580,9 +575,8 @@ pub fn fix_one_with(
     // page-150），逐条替换会把刚写好的名字再改一次，manifest 引用就指错了。
     let refs = merge_refs(&html_map, &img_map);
     let mut new_opf = rewrite_refs(&opf_raw, &refs);
-    // 按已排序的 entries 重建 spine 段落（能力扩展的一部分：排序后必须把
-    // <itemref> 顺序一并重写，否则回读校验必然失败；原版 Python 不重排
-    // spine，仅靠 entries 顺序写文件）。
+    // 按已排序的 entries 重建 spine 段落：排序后必须把
+    // <itemref> 顺序一并重写，否则回读校验必然失败。
     //
     // 注意 `<spine …>` 上可能带属性（真实 kmoe 包就是
     // `<spine page-progression-direction="rtl" toc="ncx" kmoe-pagedirect="rtl">`），
@@ -605,7 +599,7 @@ pub fn fix_one_with(
         }
     }
 
-    // ---- nav（可选：找不到 vol.nav 就跳过，与 Python `if nav_name:` 一致）----
+    // ---- nav（可选：找不到 vol.nav 就跳过）----
     let mut new_nav: Option<String> = None;
     let nav_name: Option<String> = if namelist.iter().any(|n| n == "xml/vol.nav") {
         Some("xml/vol.nav".to_string())
@@ -711,7 +705,7 @@ pub fn fix_one_with(
             .map_err(|e| KmoeError { msg: format!("写 zip 收尾失败: {e}") })?;
     }
 
-    // ---- 回读校验（对应 Python 的 with zipfile.ZipFile(tmp_dst, "r")）----
+    // ---- 回读校验（重新打开临时产物逐项核对）----
     let mut fail_remove = false;
     let mut fail_msg: Option<String> = None;
     {
@@ -819,7 +813,7 @@ pub fn fix_one_with(
     fs::rename(tmp_path, &dst_path)
         .map_err(|e| KmoeError { msg: format!("替换目标文件失败 {dst_s}: {e}") })?;
     if opts.rotate_cover == RotateCover::Off {
-        // 原版 Python 的文案，未开启回正时保持一字不差
+        // 未开启回正时的固定文案（见 docs/architecture.md）
         _log("  页序已按页码重排完成（不含旋转处理）");
     } else {
         _log("  页序已按页码重排完成");
