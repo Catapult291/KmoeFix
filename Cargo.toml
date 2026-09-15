@@ -9,6 +9,10 @@ license = "MIT"
 name = "kmoefix"
 path = "src/main.rs"
 
+[[bin]]
+name = "kmoefix_gui"
+path = "src/bin/kmoefix_gui.rs"
+
 [lib]
 name = "kmoefix"
 path = "src/lib.rs"
@@ -16,3 +20,14 @@ path = "src/lib.rs"
 [dependencies]
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
 regex = "1"
+eframe = "0.31"
+rfd = "0.15"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+flate2 = "1"
+crc32fast = "1"
+# 侧放页回正（--rotate-cover）用：只取 jpeg/png 两个编解码器。
+# image 已因 eframe 在 Cargo.lock 里，不引入新的第三方 crate。
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+
+[dev-dependencies]
