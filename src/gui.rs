@@ -89,7 +89,6 @@ mod color {
     pub const BTN_BORDER_DIM: Color32 = Color32::from_rgb(0xE0, 0xE0, 0xE0);
     pub const BTN_HOVER_FACE: Color32 = Color32::from_rgb(0xEA, 0xF3, 0xFB);
     pub const BTN_PRESS_FACE: Color32 = Color32::from_rgb(0xD9, 0xE9, 0xF7);
-    pub const BTN_HOVER_BORDER: Color32 = Color32::from_rgb(0x00, 0x78, 0xD7);
     pub const BTN_INNER_TOP: Color32 = Color32::from_rgb(0xE9, 0xE9, 0xE9);
     pub const BTN_INNER_BOTTOM: Color32 = Color32::from_rgb(0xC9, 0xC9, 0xC9);
 
@@ -286,13 +285,7 @@ fn button(ui: &mut egui::Ui, rect: Rect, text: &str, enabled: bool) -> bool {
     } else {
         color::BTN_FACE
     };
-    let border = if !enabled {
-        color::BTN_BORDER_DIM
-    } else if hovered || pressed {
-        color::BTN_HOVER_BORDER
-    } else {
-        color::BTN_BORDER
-    };
+    let border = if enabled { color::BTN_BORDER } else { color::BTN_BORDER_DIM };
 
     let p = ui.painter();
     p.rect_filled(rect, CornerRadius::same(2), face);
