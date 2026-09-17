@@ -66,6 +66,8 @@ RUSTFLAGS="-C target-feature=+crt-static" cargo build --release
 # 发布用静态链接构建：不依赖 VC++ 运行库
 ```
 
+构建时 `build.rs` 把 `assets/kmoefix.ico` 与版本信息编进 exe，这一步用的是 MSVC 工具链自带 Windows SDK 的 `rc.exe`。图标资源已入库，只有改图标才需要 `python tools/make_icon.py` 重新生成（该脚本依赖 Pillow）。
+
 ## 测试
 
 ```bash

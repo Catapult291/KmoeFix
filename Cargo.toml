@@ -27,4 +27,8 @@ crc32fast = "1"
 # image 已因 eframe 在 Cargo.lock 里，不引入新的第三方 crate。
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 
+[build-dependencies]
+# 图标嵌入 PE 资源：生成 .rc 并调 Windows SDK 的 rc.exe（不引第三方资源编译器）
+tauri-winres = "0.3"
+
 [dev-dependencies]
