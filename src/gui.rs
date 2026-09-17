@@ -13,7 +13,9 @@
 //!
 //! 交互：添加/拖拽去重、移除选中、清空、开始处理（清空日志 + 启动进度条 +
 //! 禁用按钮 + 后台线程逐个 `fix_one` + 队列轮询）、空列表与 NeeView 路径缺失时
-//! 的弹窗提示、结束时回写配置。配置持久化到 exe 同目录 `KmoeFix.json`。
+//! 的弹窗提示、结束时回写配置、把处理成功的项从列表清掉（失败项保留）。
+//! 勾选「完成后用 NeeView 打开」时优先打开列表里选中的那个文件的产物，
+//! 没有选中项才退回最后一个成功项。配置持久化到 exe 同目录 `KmoeFix.json`。
 //!
 //! 入口是 [`run_gui`]：CLI 与 GUI 共用同一个 exe（`src/main.rs` 分发），
 //! 无参数双击、或 `--gui [文件…]` 时由 `cli.rs` 走到这里。
@@ -34,7 +36,7 @@ const CONFIG_NAME: &str = "KmoeFix.json";
 const HINT_TEXT: &str = "拖拽 ZIP/EPUB/CBZ 到窗口，或点击添加";
 const LOG_LABEL: &str = "日志:";
 const OPTS_LABEL: &str = "选项";
-const CHK_TEXT: &str = "完成后用 NeeView 打开（仅打开最后成功项）";
+const CHK_TEXT: &str = "完成后用 NeeView 打开";
 const PATH_LABEL: &str = "NeeView 路径:";
 const BTN_ADD: &str = "添加文件…";
 const BTN_REMOVE: &str = "移除选中";
@@ -196,7 +198,16 @@ struct LogLine {
 /// worker → UI 事件（tag + 文本；done 附带统计）。
 enum Event {
     Log { tag: Tag, text: String },
-    Done { ok: usize, fail: usize, last_ok: Option<PathBuf> },
+    Done {
+        ok: usize,
+        fail: usize,
+        /// 处理成功的源文件，用于把它们从待处理列表里清掉。
+        ok_srcs: Vec<PathBuf>,
+        /// 最后一个成功项的产物路径（列表无选中项时的打开目标）。
+        last_ok: Option<PathBuf>,
+        /// 「开始处理」时列表选中项的产物路径（有则为优先打开目标）。
+        target_ok: Option<PathBuf>,
+    },
 }
 
 // ---------------- 布局 ----------------
@@ -579,7 +590,7 @@ impl Gui {
             while let Ok(e) = rx.try_recv() {
                 match e {
                     Event::Log { tag, text } => self.push_log(tag, text),
-                    Event::Done { ok, fail, last_ok } => {
+                    Event::Done { ok, fail, ok_srcs, last_ok, target_ok } => {
                         finished = true;
                         self.running = false;
                         self.rx = None;
@@ -588,9 +599,24 @@ impl Gui {
                             if fail == 0 { Tag::Ok } else { Tag::Err },
                             format!("全部完成: 成功 {ok} / 失败 {fail}"),
                         );
+                        // 成功项已产出「修正版」，从待处理列表清掉；失败项留在列表里便于重试
+                        if !ok_srcs.is_empty() {
+                            let before = self.files.len();
+                            self.files.retain(|f| !ok_srcs.contains(f));
+                            self.sel.clear();
+                            self.anchor = None;
+                            self.push_log(
+                                Tag::Info,
+                                format!(
+                                    "已从列表移除 {} 个处理成功的文件（失败项保留）",
+                                    before - self.files.len()
+                                ),
+                            );
+                        }
                         self.cfg.save();
                         if self.cfg.open_with_neeview {
-                            self.launch_neeview(last_ok);
+                            // 处理前选中了哪一项就打开哪一项，没选中才退回最后一个成功项
+                            self.launch_neeview(target_ok.or(last_ok));
                         }
                         break;
                     }
@@ -605,10 +631,19 @@ impl Gui {
         }
     }
 
-    /// NeeView 分支：勾选了「完成后打开」且路径不存在时弹确认框；
-    /// 框里无论选「是」还是「否」都只结束、不尝试打开。
-    fn launch_neeview(&mut self, last_ok: Option<PathBuf>) {
-        let Some(ok_path) = last_ok else { return };
+    /// 开始处理时的打开目标：优先最近一次点击的那一行（锚点），否则取选中的第一行。
+    fn selected_target(&self) -> Option<PathBuf> {
+        let idx = self
+            .anchor
+            .filter(|a| self.sel.contains(a))
+            .or_else(|| self.sel.first().copied())?;
+        self.files.get(idx).cloned()
+    }
+
+    /// NeeView 分支：`open_path` 为空（一个成功项都没有）时不打开；
+    /// 勾选了「完成后打开」且路径不存在时弹确认框，框里选「是」或「否」都只结束、不尝试打开。
+    fn launch_neeview(&mut self, open_path: Option<PathBuf>) {
+        let Some(ok_path) = open_path else { return };
         let nee = self.cfg.neeview_path.trim().to_string();
         if !Path::new(&nee).exists() {
             let _ = rfd::MessageDialog::new()
@@ -653,11 +688,12 @@ impl Gui {
         self.log_stick = true;
         self.phase = 0.0;
         self.running = true;
-        self.start_worker();
+        self.start_worker(self.selected_target());
     }
 
     /// 后台线程：逐个 fix_one，事件全走 channel，UI 线程不碰任何处理逻辑。
-    fn start_worker(&mut self) {
+    /// `target` 是「开始处理」时列表里的选中项，成功时把它的产物单独记下来。
+    fn start_worker(&mut self, target: Option<PathBuf>) {
         if self.rx.is_some() || self.files.is_empty() {
             return;
         }
@@ -670,7 +706,9 @@ impl Gui {
         std::thread::spawn(move || {
             let mut ok_cnt = 0usize;
             let mut fail_cnt = 0usize;
+            let mut ok_srcs: Vec<PathBuf> = Vec::new();
             let mut last_ok: Option<PathBuf> = None;
+            let mut target_ok: Option<PathBuf> = None;
             for src in &files {
                 let name = file_name_of(src);
                 let _ = tx.send(Event::Log {
@@ -690,6 +728,10 @@ impl Gui {
                     Ok(_) => {
                         ok_cnt += 1;
                         last_ok = Some(dst.clone());
+                        ok_srcs.push(src.clone());
+                        if target.as_ref().is_some_and(|t| *t == *src) {
+                            target_ok = Some(dst.clone());
+                        }
                         let _ = tx.send(Event::Log {
                             tag: Tag::Ok,
                             text: format!("✔ 完成: {}", file_name_of(&dst)),
@@ -705,7 +747,7 @@ impl Gui {
                     }
                 }
             }
-            let _ = tx.send(Event::Done { ok: ok_cnt, fail: fail_cnt, last_ok });
+            let _ = tx.send(Event::Done { ok: ok_cnt, fail: fail_cnt, ok_srcs, last_ok, target_ok });
         });
     }
 }
@@ -1067,14 +1109,23 @@ impl eframe::App for Gui {
     }
 }
 
+/// 窗口与任务栏图标：与 PE 资源同一份素材（PE 那份由 `build.rs` 嵌入）。
+fn window_icon() -> egui::IconData {
+    let img = image::load_from_memory(include_bytes!("../assets/kmoefix.png"))
+        .expect("内嵌的 assets/kmoefix.png 无法解码")
+        .into_rgba8();
+    egui::IconData { rgba: img.as_raw().clone(), width: img.width(), height: img.height() }
+}
+
 /// 启动 GUI。`preload` 来自命令行 `--gui <文件…>`，装填进列表后不自动开始。
 pub fn run_gui(preload: Vec<PathBuf>) -> eframe::Result<()> {
     let cfg = Config::load();
-    let title = format!("{APP_NAME} v{} - Kmoe漫画包顺序修正", crate::VERSION);
+    let title = APP_NAME.to_owned();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([720.0, 560.0])
             .with_min_inner_size([680.0, 520.0])
+            .with_icon(window_icon())
             .with_title(title.clone()),
         ..Default::default()
     };
@@ -1230,5 +1281,64 @@ mod tests {
         // 非法取值按默认走，不打断处理流程
         let cfg = Config { rotate_cover: "xyz".to_string(), ..Config::default() };
         assert_eq!(cfg.rotate_cover_mode(), crate::RotateCover::Auto);
+    }
+
+    fn gui_with(names: &[&str]) -> Gui {
+        Gui {
+            files: names.iter().map(PathBuf::from).collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn selected_target_follows_last_click() {
+        let mut g = gui_with(&["a.epub", "b.epub", "c.epub"]);
+
+        // 没有选中项时不指定打开目标
+        assert_eq!(g.selected_target(), None);
+
+        // 单击第 2 行：打开目标就是它
+        g.sel = vec![1];
+        g.anchor = Some(1);
+        assert_eq!(g.selected_target(), Some(PathBuf::from("b.epub")));
+
+        // Ctrl 多选后，目标跟着最近点击的那一行走
+        g.sel = vec![1, 2];
+        g.anchor = Some(2);
+        assert_eq!(g.selected_target(), Some(PathBuf::from("c.epub")));
+
+        // 锚点失效（不在选中集合里）时退回选中的第一行
+        g.anchor = Some(0);
+        assert_eq!(g.selected_target(), Some(PathBuf::from("b.epub")));
+    }
+
+    #[test]
+    fn done_prunes_successes_and_keeps_failures() {
+        let mut g = gui_with(&["a.epub", "b.epub"]);
+        g.sel = vec![1];
+        g.anchor = Some(1);
+
+        let (tx, rx) = mpsc::channel();
+        tx.send(Event::Done {
+            ok: 1,
+            fail: 1,
+            ok_srcs: vec![PathBuf::from("a.epub")],
+            last_ok: Some(PathBuf::from("a_修正版.epub")),
+            target_ok: Some(PathBuf::from("b_修正版.epub")),
+        })
+        .unwrap();
+        g.rx = Some(rx);
+        g.running = true;
+        g.pump(&egui::Context::default());
+
+        // 成功的 a 从列表清掉，失败的 b 留着；选中状态随之失效
+        assert_eq!(g.files, vec![PathBuf::from("b.epub")]);
+        assert!(g.sel.is_empty());
+        assert_eq!(g.anchor, None);
+        assert!(!g.running);
+        assert!(g
+            .logs
+            .iter()
+            .any(|l| l.text.contains("已从列表移除 1 个处理成功的文件")));
     }
 }
