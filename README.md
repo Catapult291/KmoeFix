@@ -2,7 +2,7 @@
 
 把漫画 EPUB 的页面与图片按**真实页码**重命名、重排章节顺序、清除脏标签，输出符合 EPUB 规范的 `*_修正版.epub`。面向按文件名排序看图的场景（NeeView、解压看图），让文件名顺序等于阅读顺序。
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue)](LICENSE)
 ![Rust](https://img.shields.io/badge/Rust-2021-orange)
 
 ## 解决什么问题
@@ -91,4 +91,4 @@ cargo test    # 27 个用例：核心 20 + 命令行分发 6 + GUI 配置映射 
 
 ## 许可证
 
-[MIT](LICENSE) — Copyright (c) 2026 Catapult291
+[GPL-3.0-or-later](LICENSE) — GNU 通用公共许可证第 3 版或更高版本，Copyright (C) 2026 Catapult291

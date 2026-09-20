@@ -12,7 +12,7 @@
 - 仓库来源:**从零新建**(GitHub 网页 New repository),不是 fork(`gh repo view` 确认 isFork=false)。
 - 目标远程地址:https://github.com/Catapult291/KmoeFix.git(origin,分支 main 跟踪 origin/main)。
 - 是否要公开:是(仓库当前 visibility=PUBLIC)。
-- 开源许可证(发布前必选):MIT(根目录 LICENSE 已放好,Copyright (c) 2026 Catapult291;Cargo.toml 已写 `license = "MIT"`)。
+- 开源许可证(发布前必选):GPL-3.0-or-later(根目录 LICENSE 是 GNU GPL v3 官方全文,末尾附 Copyright (C) 2026 Catapult291 声明;Cargo.toml 已写 `license = "GPL-3.0-or-later"`)。
 - 主要语言 / 构建命令:Rust(edition 2021);构建 `cargo build --release`(产物 `target/release/KmoeFix.exe` —— 命令行与 GUI 是同一个 exe;发布版另加 `RUSTFLAGS="-C target-feature=+crt-static"` 静态链接,build.rs 用 Windows SDK 的 rc.exe 把 `assets/kmoefix.ico` 嵌进 PE 资源);测试 `cargo test`(29 个用例)。
 - 是否已有 .gitignore(若无,建仓库第一步先补上):已有。根目录 .gitignore 覆盖 `/target`、`*_修正版.epub|zip|cbz`、`*.tmp`、`/*.epub`、`/*.exe`、`.grok/`、`/testdata/`、`.DS_Store`、`Thumbs.db`、`Desktop.ini`。
 

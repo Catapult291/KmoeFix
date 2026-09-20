@@ -3,7 +3,7 @@ name = "KmoeFix"
 version = "1.0.0"
 edition = "2021"
 description = "Repair shuffled comic EPUB page order: rename pages by real page number, reorder spine, move site card pages to the end, strip dirty attributes, repack per EPUB spec"
-license = "MIT"
+license = "GPL-3.0-or-later"
 
 [[bin]]
 name = "KmoeFix"
