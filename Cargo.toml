@@ -1,6 +1,6 @@
 [package]
 name = "KmoeFix"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 description = "Repair shuffled comic EPUB page order: rename pages by real page number, reorder spine, move site card pages to the end, strip dirty attributes, repack per EPUB spec"
 license = "GPL-3.0-or-later"
